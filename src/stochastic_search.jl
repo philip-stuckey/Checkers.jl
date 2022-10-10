@@ -2,9 +2,17 @@ module StochasticSearch
 
 using Random
 using Combinatorics
-using ...CheckersCore
+using ...CheckersCore: neighbors, covered, Pad
 
 export stochastic_search, brute_force2
+
+is_hole(A) = [is_hole(A, I) for I in CartesianIndices(A)]
+is_hole(A, I) = !covered(A, I)
+
+
+holes(m::AbstractMatrix{T}; fill=zero(T)) where {T} = holes(Pad(m, fill))
+holes(p::Pad) = sum(neighbors(p) .== 0)
+covering(A, I) = A[I] * sum(neighbors(A, I, fill=one(eltype(A))) .== 0)
 
 function update!(A)
     (h, holeIndex) = findmax(neighbors(is_hole(A)))

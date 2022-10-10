@@ -1,6 +1,6 @@
 module BruteForce
 using Combinatorics
-using ...CheckersCore
+using ...CheckersCore: covered
 
 export brute_force, num_solutions
 

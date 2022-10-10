@@ -1,8 +1,7 @@
 module CheckersCore
 
 export Pad, getindex, eltype
-export covered, covering
-export is_hole, holes, neighbors
+export covered, neighbors
 
 """
 I didn't want to deal with litteral edge cases, so I made this wrapper struct
@@ -58,23 +57,12 @@ neighbors(m::AbstractMatrix{T}, I; fill=zero(T)) where {T} = neighbors(Pad(m, fi
 neighbors(z::Pad) = [sum(neighbors(z, Tuple(I))) for (I, a) in pairs(z.arr)]
 neighbors(m::AbstractMatrix{T}; fill=zero(T)) where {T} = neighbors(Pad(m, fill))
 
-
-
-holes(m::AbstractMatrix{T}; fill=zero(T)) where {T} = holes(Pad(m, fill))
-holes(p::Pad) = sum(neighbors(p) .== 0)
-
-is_hole(A) = [is_hole(A, I) for I in CartesianIndices(A)]
-is_hole(A, I) = !covered(A, I)
-
-
 """
 	A matrix is "covered" if every element either is 1 or has a 1 in it's 
 neighborhood.
 """
 covered(A) = all(covered(A, I) for I in CartesianIndices(A))
 covered(A, I) = A[I] == 1 || 1 in neighbors(A, I)
-
-covering(A, I) = A[I] * sum(neighbors(A, I, fill=one(eltype(A))) .== 0)
 
 @warn "Lazy programmer warning: exporting all symbols"
 
