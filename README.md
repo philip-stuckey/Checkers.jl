@@ -32,3 +32,34 @@ if all squares on the board are covered, the whole board is also covered
 ```julia
 covered(A) = all(covered(A, I) for I in CartesianIndices(A))
 ```
+## By brute force search
+The brute force search is simple and guareteed to give a minimal solution, but
+performs horribly as n gets large due to the size of the search space 
+increasing factorially. 
+
+```julia
+using Combinatorics
+function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
+    board = zeros(Bool, n, n)  # pre-allocate a board
+    for m in M
+        # make an iterator over every combination of indices length m. These is where we'll put the 1s
+        combinations = Combinatorics.Combinations(n * n, m)
+        for combination in combinations  # most of the allocations happen here
+            board .= 0  # Start by clearing the old board, this doesn't allocate
+            board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices.
+            if covered(board)  # check if the board is covered. This doesn't allocate somehow
+                return (board, m)  # if we find any solution, return early 
+            end
+        end
+    end
+    return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
+end
+```
+This function starts at the smallest possible `m` and only increments `m` when
+all boards have been exhausted. This means that the first covered board that
+this function finds *must* be a minimal covering board, and therefore the 
+function returns it immediatly. This is helpful because it doesn't require 
+searching through the entire search space.
+
+One issue with this function is that, due to how uses the same memory for every
+board, it is not clear how to parallelize it.
