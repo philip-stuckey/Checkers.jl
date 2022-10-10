@@ -9,14 +9,14 @@ export stochastic_search, brute_force2
 is_hole(A) = [is_hole(A, I) for I in CartesianIndices(A)]
 is_hole(A, I) = !covered(A, I)
 
-
 holes(m::AbstractMatrix{T}; fill=zero(T)) where {T} = holes(Pad(m, fill))
 holes(p::Pad) = sum(neighbors(p) .== 0)
-covering(A, I) = A[I] * sum(neighbors(A, I, fill=one(eltype(A))) .== 0)
+
+covering(A, I) = A[I] * count(==(0), neighbors(A, I, fill=one(eltype(A))))
 
 function update!(A)
-    (h, holeIndex) = findmax(neighbors(is_hole(A)))
-    (c, tokenIndex) = find_min_covering(A)
+    (_, holeIndex) = findmax(neighbors(is_hole(A)))
+    (_, tokenIndex) = find_min_covering(A)
     @assert A[holeIndex] == 0
     @assert A[tokenIndex] == 1
     A[holeIndex] = 1
@@ -57,7 +57,7 @@ function stochastic_search(
         holes(A) == 0 && return A
         shuffle!(A)
     end
-    return Bool[]
+    return Bool[;;]
 end
 
 
