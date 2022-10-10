@@ -1,11 +1,14 @@
 # Checkers.jl
 finding the size of the minimum dominating set of an n by n grid graph
 
-Note that this was not the language I used to describe the problem when I 
-started looking at this problem. I wanted to know what was the smallest number
+This is a (very not rigourous) description of what I found.
+
+Note that I did not use the language or apparatus of dominating sets when I 
+first started this. I wanted to know what was the smallest number
 of checkers (m) that I could use to cover a (n by n) checkerboard where a square is 
 "covered" if it has a checker on it or is directly next to a square with a 
-checker on it (diagonals don't count).
+checker on it (diagonals don't count). Therefore most of this descriptions uses 
+"checkers", "squares", and "holes".
 
 Note that m ≧ n²/5, because each individual checker can cover, at most, 5 squares. 
 Also, m < n²/2, because a board that has a checker on every other square is 
@@ -37,6 +40,11 @@ A "hole" is a square which is not covered
 ```julia
 is_hole(A, I) = !covered(A, I)
 is_hole(A) = [is_hole(A, I) for I in CartesianIndices(A)]
+```
+The number of holes on a board can be computed by 
+
+```julia
+holes(p) = sum(neighbors(p) .== 0)
 ```
 
 The number of squares a square is "covering" can be defined as
@@ -110,3 +118,57 @@ end
 ```
 
 Note that `find_min_covering` only needs to look at the squares with checkers on them.
+
+This update algorithem can be run until the number of holes is 0.
+
+```julia
+A = zeros(n,n)
+A[1:m] .= 1
+
+prev_holes = holes(A)
+update!(A)
+next_holes = holes(A)
+while next_holes > 0
+    prev_holes = next_holes
+    update!(A)
+    next_holes = holes(A)
+end
+```
+
+However `update!` won't always reduce the number of holes. Sometimes it finds a 
+local minimum where it oscilates between multiple boards with a non-zero 
+number of holes. In these case, the board can be shuffled to give the 
+algorithem a new initial condition, and the process can be restarted.
+
+There is no guarentee that a covered n by n board with m checkers exists, 
+so the number of attempts is constrained.
+
+```julia
+using Random
+function stochastic_search(
+    n::Int,
+    m::Int;
+    init=reshape(shuffle(vcat(ones(Bool, m), zeros(Bool, n * n - m))), n, n),
+    attempts=10^7,
+    (update!)=update!
+)
+    A = copy(init)
+    for n in 1:attempts
+        prev_holes = holes(A)
+        update!(A)
+        next_holes = holes(A)
+        while next_holes > 0 && prev_holes > next_holes
+            prev_holes = next_holes
+            update!(A)
+            next_holes = holes(A)
+        end
+        holes(A) == 0 && return A
+        shuffle!(A)
+    end
+    return Bool[;;]
+end
+```
+
+Note that this function can be used to find an upper bound on `m`, in fact 
+the higher `m` is the more likely it is to stumble on a solution. However it cannot 
+find a lower bound to `m` because it does not try all of the boards exhaustivly.
