@@ -32,6 +32,23 @@ if all squares on the board are covered, the whole board is also covered
 ```julia
 covered(A) = all(covered(A, I) for I in CartesianIndices(A))
 ```
+
+A "hole" is a square which is not covered
+```julia
+is_hole(A, I) = !covered(A, I)
+is_hole(A) = [is_hole(A, I) for I in CartesianIndices(A)]
+```
+
+The number of squares a square is "covering" can be defined as
+```julia
+neighbors(m::AbstractMatrix, I; fill) = neighbors(Pad(m, fill), I)
+covering(A, I) = A[I] * count(==(0), neighbors(A, I, fill=one(eltype(A))))
+```
+
+This uses a special overload of neighbors which counts all squares out of 
+bounds as 1's instead of zeros. Otherwise checkers on the edge would "cover" 
+squares which are outside of the board.
+
 ## By brute force search
 The brute force search is simple and guareteed to give a minimal solution, but
 performs horribly as n gets large due to the size of the search space 
@@ -63,3 +80,33 @@ searching through the entire search space.
 
 One issue with this function is that, due to how uses the same memory for every
 board, it is not clear how to parallelize it.
+
+## By Stochastic search. 
+
+The way that the brute force search looks for covered boards is far from optimal, checking huge swaths
+of uncovered boards before reaching any covered ones. Instead, why find a way to take a non-covered board
+and move it *closer* to a covered board with the same number of checkers. One way to do this is to find the square
+with a checker on it which coveres the fewest other squares, put it's checkeron the square with the most un-covered 
+squares (called "holes") around it.
+
+```julia
+function update!(A)
+    (h, holeIndex) = findmax(neighbors(is_hole(A)))
+    (c, tokenIndex) = find_min_covering(A)
+    @assert A[holeIndex] == 0
+    @assert A[tokenIndex] == 1
+    A[holeIndex] = 1
+    A[tokenIndex] = 0
+    return A
+end
+```
+
+```julia
+function find_min_covering(A)
+    I = filter(I -> A[I], CartesianIndices(A)) |> collect
+    (c, II) = findmin(I -> covering(A, I), I)
+    return (c, I[II])
+end
+```
+
+Note that `find_min_covering` only needs to look at the squares with checkers on them.
