@@ -14,7 +14,7 @@ Note that m ≧ n²/5, because each individual checker can cover, at most, 5 squ
 Also, m < n²/2, because a board that has a checker on every other square is 
 covered (very inefficiently).
 
-## usefull deffinitions
+## Usefull definitions 
 
 The Von Neuman neighborhood (of radius 1) around the i,jth element of 
 matrix x. `z` here is a special matrix type that returns a default fill value
