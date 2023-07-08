@@ -11,7 +11,7 @@ function run_brute_force(n)
 
     total_tasks = length(M)
     for (i, m) in enumerate(M)
-        combinations = Combinatorics.Combinations(n * n, m)
+        combinations = Combinatorics.combinations(1:(n*n),m)
         println("Progress: $i / $total_tasks")
         for combination in combinations
             CUDA.@sync begin
