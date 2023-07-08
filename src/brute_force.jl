@@ -14,20 +14,18 @@ returns immediatly, because it always exhausts boards with fewer "1"s first,
 therefore the first covered board it finds must be a minimal one.
 """
 function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
-    board = zeros(Bool, n, n)  # pre-allocate a board
-    for m in M
-        # make an iterator over every combination of indices length m. These is where we'll put the 1s
-        combinations = Combinatorics.Combinations(n * n, m)
-        #@info "$(now())" m  log10(length(combinations))
-        for combination in combinations  # most of the allocations happen here
-            board .= 0  # Start by clearing the old board, this doesn't allocate
-            board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices. This allocates a little bit
-            if covered(board)  # check if the board is covered. This doesn't allocate somehow
-                return (board, m)  # if we find any solution, return early 
-            end
-        end
-    end
-    return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
+	board = zeros(Bool, n, n)  # pre-allocate a board
+	for m in M
+		# make an iterator over every combination of indices length m. These is where we'll put the 1s
+		@views for combination in combinations(1:(n*n), m)
+			board .= 0  
+			board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices.
+			if covered(board)  # check if the board is covered.
+				return (board, m)  # if we find any solution, return early 
+			end
+		end
+	end
+	return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
 end
 
 function num_solutions(n, m)
