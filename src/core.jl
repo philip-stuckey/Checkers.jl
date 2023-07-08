@@ -1,10 +1,12 @@
 module CheckersCore
 
+using CUDA
+
 export Pad, getindex, eltype
 export covered, neighbors
 
 """
-I didn't want to deal with litteral edge cases, so I made this wrapper struct
+I didn't want to deal with literal edge cases, so I made this wrapper struct
 to return 0 when you try to index outside of the bounds of the matrix.
 """
 struct Pad{T,A<:AbstractMatrix{T}}
@@ -14,57 +16,68 @@ end
 
 Pad(arr::AbstractMatrix{T}) where {T} = Pad(arr, zero(T))
 
-"""
-Check if the index is in the matrix bounds, if so, return the value of the 
-matrix at that index, else return zero. 
-e.g. 
-```julia
-x = ones(Bool, 10,10)
-z = ZeroPad(x)
-@assert z[10,10] == 1
-@assert z[10,11] == 0
-```
-This function is strictly more complicated than it needs to be because I tried
-to make it general for any abstract array, but then I gave up and made it work 
-for only 2D arrays whose indices start at one. 
-"""
 function Base.getindex(z::Pad{T}, i, j)::T where {T}
-    index = CartesianIndex(i, j)
-    # The compiler couldn't infer the type of this variable, so I included this long and ponderous type assert
-    indices = CartesianIndices(z.arr)::CartesianIndices{2,Tuple{Base.OneTo{Int64},Base.OneTo{Int64}}}
-    return (index in indices) ? z.arr[i, j] : z.fill
+index = CartesianIndex(i, j)
+indices = CartesianIndices(z.arr)::CartesianIndices{2,Tuple{Base.OneTo{Int64},Base.OneTo{Int64}}}
+return (index in indices) ? z.arr[i, j] : z.fill
 end
 
 Base.getindex(z::Pad, c::CartesianIndex{2}) = getindex(z, Tuple(c)...)
 
 """
-this function is helpful for type stability. Essentially it informs the 
-compiler that indexing a `ZeroPad` object will return the same type as the
+this function is helpful for type stability. Essentially it informs the
+compiler that indexing a ZeroPad object will return the same type as the
 underlying matrix.
 """
 Base.eltype(::Type{Pad{T}}) where {T} = T
 
-
 """
-	get the Von Neuman neighborhood (of radius 1) around the i,jth element of 
-matrix x. Here is where I use ZeroPad to avoiud having to worry about indicies
+get the Von Neumann neighborhood (of radius 1) around the (i, j)th element of
+matrix x. Here is where we use Pad to avoid having to worry about indices
 out of bounds.
 """
-neighbors(z::Pad, (i, j)) = (z[i-1, j], z[i, j-1], z[i, j+1], z[i+1, j], z[i, j])
-neighbors(z::Pad, I::CartesianIndex{2}) = neighbors(z, Tuple(I))
-neighbors(m::AbstractMatrix{T}, I; fill=zero(T)) where {T} = neighbors(Pad(m, fill), I)
+function neighbors(z::Pad, (i, j))
+neighbors = CUDA.zeros(Int8, 5)
+neighbors[1] = z[i-1, j]
+neighbors[2] = z[i, j-1]
+neighbors[3] = z[i, j+1]
+neighbors[4] = z[i+1, j]
+neighbors[5] = z[i, j]
+return neighbors
+end
 
-neighbors(z::Pad) = [sum(neighbors(z, Tuple(I))) for (I, a) in pairs(z.arr)]
-neighbors(m::AbstractMatrix{T}; fill=zero(T)) where {T} = neighbors(Pad(m, fill))
+function neighbors(z::Pad, I::CartesianIndex{2})
+return neighbors(z, Tuple(I))
+end
+
+function neighbors(m::AbstractMatrix{T}, I; fill=zero(T)) where {T}
+return neighbors(Pad(m, fill), I)
+end
+
+function neighbors(z::Pad)
+result = CUDA.zeros(Int, size(z.arr, 1) * size(z.arr, 2))
+@cuda threads=length(result) blocks=1 begin
+idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+if idx <= length(result)
+i, j = (idx - 1) ÷ size(z.arr, 2) + 1, (idx - 1) % size(z.arr, 2) + 1
+result[idx] = sum(neighbors(z, (i, j)))
+end
+end
+return result
+end
+
+function neighbors(m::AbstractMatrix{T}; fill=zero(T)) where {T}
+return neighbors(Pad(m, fill))
+end
 
 """
-	A matrix is "covered" if every element either is 1 or has a 1 in it's 
+A matrix is "covered" if every element either is 1 or has a 1 in its
 neighborhood.
 """
-covered(A) = all(covered(A, I) for I in CartesianIndices(A))
-covered(A, I) = A[I] == 1 || 1 in neighbors(A, I)
+function covered(A)
+return all(A .== 1 .| neighbors(A))
+end
 
 @warn "Lazy programmer warning: exporting all symbols"
-
 
 end
