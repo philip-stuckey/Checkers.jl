@@ -55,15 +55,16 @@ return neighbors(Pad(m, fill), I)
 end
 
 function neighbors(z::Pad)
-result = CUDA.zeros(Int, size(z.arr, 1) * size(z.arr, 2))
-@cuda threads=length(result) blocks=1 begin
-idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-if idx <= length(result)
-i, j = (idx - 1) ÷ size(z.arr, 2) + 1, (idx - 1) % size(z.arr, 2) + 1
-result[idx] = sum(neighbors(z, (i, j)))
-end
-end
-return result
+    result = CUDA.zeros(Int, size(z.arr, 1) * size(z.arr, 2))
+     function foo(result)
+        idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        if idx <= length(result)
+            i, j = (idx - 1) ÷ size(z.arr, 2) + 1, (idx - 1) % size(z.arr, 2) + 1
+            result[idx] = sum(neighbors(z, (i, j)))
+        end
+    end
+    @cuda threads=length(result) blocks=1 foo()
+    return result
 end
 
 function neighbors(m::AbstractMatrix{T}; fill=zero(T)) where {T}
