@@ -56,7 +56,7 @@ end
 
 function neighbors(z::Pad)
     result = CUDA.zeros(Int, size(z.arr, 1) * size(z.arr, 2))
-     function foo(result)
+     function foo()
         idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
         if idx <= length(result)
             i, j = (idx - 1) ÷ size(z.arr, 2) + 1, (idx - 1) % size(z.arr, 2) + 1
@@ -64,7 +64,7 @@ function neighbors(z::Pad)
         end
         return nothing
     end
-    @cuda threads=length(result) blocks=1 foo(result)
+    @cuda threads=length(result) blocks=1 foo()
     return result
 end
 
