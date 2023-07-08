@@ -1,7 +1,8 @@
 using CUDA
 using ProgressBars
 import Combinatorics
-import ..BruteForce
+include("brute_force.jl")
+import .BruteForce
 
 # Run the brute force algorithm for a range of task sizes
 function run_brute_force(n)
