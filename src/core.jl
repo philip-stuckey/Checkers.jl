@@ -63,7 +63,7 @@ function neighbors(z::Pad)
             result[idx] = sum(neighbors(z, (i, j)))
         end
     end
-    @cuda threads=length(result) blocks=1 foo()
+    @cuda threads=length(result) blocks=1 foo(result)
     return result
 end
 
