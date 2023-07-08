@@ -34,22 +34,4 @@ function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
     return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
 end
 
-function num_solutions(n, m)
-    d_board = CUDA.zeros(Bool, n, n)  # allocate a GPU array
-    result = CUDA.zeros(Int)
-    combinations = Combinatorics.Combinations(n * n, m)
-
-    for combination in combinations
-        CUDA.@sync begin
-            d_board .= 0  # Start by clearing the old board
-            d_board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices
-        end
-        if CUDA.@sync covered(d_board)
-            @cuda atomic add!(result, 1)
-        end
-    end
-
-    return CUDA.to_host(result[1])
-end
-
 end
