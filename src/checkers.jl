@@ -1,3 +1,8 @@
+if !isdefined(Main, :__init__) || Base.function_module(__init__) != Checkers
+	using Pkg
+	Pkg.instantiate()
+end
+
 module Checkers
 
 
