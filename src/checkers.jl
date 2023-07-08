@@ -25,7 +25,8 @@ end
 if !isdefined(Main, :__init__) || Base.function_module(__init__) != Checkers
 	using .Checkers
 	@info ARGS
-	@time result = Checkers.Algorithems.brute_force(parse(Int,ARGS[1]))
+	n = parse(Int, ARGS[1])
+	@time result = Checkers.Algorithems.brute_force(n)
 	println(last(result))
 	display(first(result))
 end
