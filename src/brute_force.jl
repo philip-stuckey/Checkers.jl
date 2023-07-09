@@ -24,8 +24,6 @@ Returns:
 """
 function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
     h_solution = Vector{Tuple{Array{Bool, 2}, Int}}(undef, 1)  # host array to store solution
-    total_combinations = length(collect(Combinatorics.Combinations(n * n, maximum(M))))
-    p = Progress(total_combinations, 1, "Progress: ", " Combinations: ")
 
     for (i, m) in enumerate(M)
         combinations = Combinatorics.Combinations(n * n, m)
@@ -39,20 +37,13 @@ function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
             num_tried += 1
             if CUDA.@sync covered(d_board)
                 h_solution[1] = (CUDA.to_host(copy(d_board)), m)  # if we find any solution, store it in the host array
-                elapsed_time = Dates.now() - start_time
-                iterations_per_second = num_tried / Dates.value(Dates.Millisecond(elapsed_time))
-                println("Solution found!")
-                println("Combination: ", combination)
-                println("Combinations tried: ", num_tried, "/", total_combinations)
-                println("Iterations per second: ", iterations_per_second)
                 return h_solution[1]  # exit the function early
             end
-            next!(p)  # update the progress bar
         end
-        done!(p)  # mark the progress bar as done
     end
 
     return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
 end
+
 
 end
