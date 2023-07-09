@@ -25,7 +25,7 @@ Returns:
 function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
     h_solution = Vector{Tuple{Array{Bool, 2}, Int}}(undef, 1)  # host array to store solution
     total_combinations = length(collect(Combinatorics.Combinations(n * n, maximum(M))))
-    p = Progress(total_combinations, 1, "Progress: ", " Combinations: ", show_percentage = true)
+    p = Progress(total_combinations, 1, "Progress: ", " Combinations: ")
 
     for (i, m) in enumerate(M)
         combinations = Combinatorics.Combinations(n * n, m)
