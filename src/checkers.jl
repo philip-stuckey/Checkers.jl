@@ -6,6 +6,9 @@ import .BruteForce
 
 # Run the brute force algorithm for a range of task sizes
 function run_brute_force(n)
+	if n < 1
+		throw(MethodError("Invalid board size: $n. Board size must be at least 1."))
+	end
     M = 1:10:n
     h_solution = Vector{Tuple{Array{Bool, 2}, Int}}(undef, 1)  # host array to store solution
 
@@ -30,7 +33,7 @@ end
 
 # Main entry point
 function main()
-    n = 7
+    n = 3
     CUDA.allowscalar(false)
     @info "Running brute force algorithm for n = $n"
     solution = run_brute_force(n)
