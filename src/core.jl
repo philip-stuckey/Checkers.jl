@@ -1,70 +1,89 @@
 module CheckersCore
+    using CUDA
 
-export Pad, getindex, eltype
-export covered, neighbors
+    export neighbors, covered
 
-"""
-I didn't want to deal with litteral edge cases, so I made this wrapper struct
-to return 0 when you try to index outside of the bounds of the matrix.
-"""
-struct Pad{T,A<:AbstractMatrix{T}}
-    arr::A
-    fill::T
-end
+    """
+    neighbors_kernel!(result, arr, nrows, ncols)
 
-Pad(arr::AbstractMatrix{T}) where {T} = Pad(arr, zero(T))
+    CUDA kernel function that calculates the number of neighboring cells with a value of `true`
+    for each cell in the input array `arr`.
 
-"""
-Check if the index is in the matrix bounds, if so, return the value of the 
-matrix at that index, else return zero. 
-e.g. 
-```julia
-x = ones(Bool, 10,10)
-z = ZeroPad(x)
-@assert z[10,10] == 1
-@assert z[10,11] == 0
-```
-This function is strictly more complicated than it needs to be because I tried
-to make it general for any abstract array, but then I gave up and made it work 
-for only 2D arrays whose indices start at one. 
-"""
-function Base.getindex(z::Pad{T}, i, j)::T where {T}
-    index = CartesianIndex(i, j)
-    # The compiler couldn't infer the type of this variable, so I included this long and ponderous type assert
-    indices = CartesianIndices(z.arr)::CartesianIndices{2,Tuple{Base.OneTo{Int64},Base.OneTo{Int64}}}
-    return (index in indices) ? z.arr[i, j] : z.fill
-end
+    Args:
+    - `result`: The output array to store the computed neighbor counts.
+    - `arr`: The input boolean array representing the game board.
+    - `nrows`: The number of rows in the array.
+    - `ncols`: The number of columns in the array.
+    """
+    function neighbors_kernel!(result, arr, nrows, ncols)
+        idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        if idx <= length(result)
+            i, j = (idx - 1) ÷ ncols + 1, (idx - 1) % ncols + 1
+            count = 0
+            for di = max(i-1, 1):min(i+1, nrows)
+                for dj = max(j-1, 1):min(j+1, ncols)
+                    @inbounds count += arr[di, dj]
+                end
+            end
+            result[idx] = count
+        end
+        return nothing
+    end
 
-Base.getindex(z::Pad, c::CartesianIndex{2}) = getindex(z, Tuple(c)...)
+    """
+    neighbors(arr::CUDA.CuArray{Bool})
 
-"""
-this function is helpful for type stability. Essentially it informs the 
-compiler that indexing a `ZeroPad` object will return the same type as the
-underlying matrix.
-"""
-Base.eltype(::Type{Pad{T}}) where {T} = T
+    Calculates the number of neighboring cells with a value of `true`
+    for each cell in the input array `arr` using GPU acceleration.
 
+    Args:
+    - `arr`: The input boolean array representing the game board.
 
-"""
-	get the Von Neuman neighborhood (of radius 1) around the i,jth element of 
-matrix x. Here is where I use ZeroPad to avoiud having to worry about indicies
-out of bounds.
-"""
-neighbors(z::Pad, (i, j)) = (z[i-1, j], z[i, j-1], z[i, j+1], z[i+1, j], z[i, j])
-neighbors(z::Pad, I::CartesianIndex{2}) = neighbors(z, Tuple(I))
-neighbors(m::AbstractMatrix{T}, I; fill=zero(T)) where {T} = neighbors(Pad(m, fill), I)
+    Returns:
+    - An integer array representing the number of neighbors for each cell.
+    """
+    function neighbors(arr::CUDA.CuArray{Bool})
+        nrows, ncols = size(arr, 1), size(arr, 2)
+        result = CUDA.zeros(Int, nrows * ncols)
+        @cuda threads=ceil(Int, (nrows*ncols)/1024) neighbors_kernel!(result, arr, nrows, ncols)
+        return result
+    end
 
-neighbors(z::Pad) = [sum(neighbors(z, Tuple(I))) for (I, a) in pairs(z.arr)]
-neighbors(m::AbstractMatrix{T}; fill=zero(T)) where {T} = neighbors(Pad(m, fill))
+    """
+    covered(A::CUDA.CuArray{Bool})
 
-"""
-	A matrix is "covered" if every element either is 1 or has a 1 in it's 
-neighborhood.
-"""
-covered(A) = all(covered(A, I) for I in CartesianIndices(A))
-covered(A, I) = A[I] == 1 || 1 in neighbors(A, I)
+    Checks if all cells in the input array `A` are covered.
 
-@warn "Lazy programmer warning: exporting all symbols"
+    Args:
+    - `A`: The input boolean array representing the game board.
 
+    Returns:
+    - `true` if all cells are covered, `false` otherwise.
+    """
+    function covered(A::CUDA.CuArray{Bool})
+        nrows, ncols = size(A, 1), size(A, 2)
+        result = CUDA.zeros(Bool, nrows, ncols)
+        @cuda threads=ceil(Int, (nrows*ncols)/1024) covered_kernel!(result, A, nrows, ncols)
+        return all(result)
+    end
 
+    """
+    covered_kernel!(result, arr, nrows, ncols)
+
+    CUDA kernel function that checks if each cell in the input array `arr` is covered.
+
+    Args:
+    - `result`: The output boolean array to store the coverage status.
+    - `arr`: The input boolean array representing the game board.
+    - `nrows`: The number of rows in the array.
+    - `ncols`: The number of columns in the array.
+    """
+    function covered_kernel!(result, arr, nrows, ncols)
+        idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        if idx <= nrows * ncols
+            i, j = (idx - 1) ÷ ncols + 1, (idx - 1) % ncols + 1
+            result[idx] = arr[i, j] == 1
+        end
+        return nothing
+    end
 end

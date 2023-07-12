@@ -1,101 +1,66 @@
 # Checkers.jl
-finding the size of the minimum dominating set of an n by n grid graph
 
-This is a (very not rigourous) description of what I found.
+This Julia project aims to find the size of the minimum dominating set of an n by n grid graph.
 
-Note that I did not use the language or apparatus of dominating sets when I 
-first started this. I wanted to know what was the smallest number
-of checkers (m) that I could use to cover a (n by n) checkerboard where a square is 
-"covered" if it has a checker on it or is directly next to a square with a 
-checker on it (diagonals don't count). Therefore most of this descriptions uses 
-"checkers", "squares", and "holes".
+## Table of Contents
+- [Introduction](#introduction)
+- [Definitions](#definitions)
+- [Brute Force Search](#brute-force-search)
+- [Stochastic Search](#stochastic-search)
+- [Using CUDA](#using-cuda)
+- [Building and Running the Project](#building-and-running-the-project)
+
+## Introduction
+The goal of this project is to determine the minimum number of checkers required to cover an n by n checkerboard, where a square is considered "covered" if it has a checker on it or is adjacent to a square with a checker (excluding diagonals). This problem is equivalent to finding the size of the minimum dominating set of an n by n grid graph.
 
 Note that m ≧ n²/5, because each individual checker can cover, at most, 5 squares. 
-Also, m < n²/2, because a board that has a checker on every other square is 
-covered (very inefficiently).
+Also, m < n²/2, because a board that has a checker on every other square is covered (very inefficiently).
 
-## Usefull definitions 
+## Definitions
+Before discussing the solution methods, let's define some useful functions used in this project:
 
-The Von Neuman neighborhood (of radius 1) around the i,jth element of 
-matrix x. `z` here is a special matrix type that returns a default fill value
-if any of the indices are out of bounds.
+- `neighbors(z, (i, j))`: Returns the Von Neumann neighborhood (of radius 1) around the i,jth element of matrix x. `z` is a special matrix type that returns a default fill value if any of the indices are out of bounds.
 
-```julia
-neighbors(z, (i, j)) = (z[i-1, j], z[i, j-1], z[i, j+1], z[i+1, j], z[i, j])
-```
+- `covered(A, (i, j))`: Checks if a square is covered, i.e., it has a checker on it or is adjacent to a square with a checker on it.
 
-A square is "covered" if it has a checker on it (represented by a `1`) or is 
-next to a square with a checker on it. 
+- `covered(A)`: Checks if all squares on the board are covered.
 
-```julia
-covered(A, (i,j)) = A[i,j] == 1 || 1 in neighbors(A, (i,j))
-```
+- `is_hole(A, I)`: Determines if a square is a "hole," i.e., it is not covered.
 
-if all squares on the board are covered, the whole board is also covered
-```julia
-covered(A) = all(covered(A, I) for I in CartesianIndices(A))
-```
+- `is_hole(A)`: Returns a boolean matrix indicating which squares are holes.
 
-A "hole" is a square which is not covered
-```julia
-is_hole(A, I) = !covered(A, I)
-is_hole(A) = [is_hole(A, I) for I in CartesianIndices(A)]
-```
-The number of holes on a board can be computed by 
+- `holes(p)`: Computes the number of holes on a board.
 
-```julia
-holes(p) = sum(neighbors(p) .== 0)
-```
+- `covering(A, I)`: Computes the number of squares a square is covering.
 
-The number of squares a square is "covering" can be defined as
-```julia
-neighbors(m::AbstractMatrix, I; fill) = neighbors(Pad(m, fill), I)
-covering(A, I) = A[I] * count(==(0), neighbors(A, I, fill=one(eltype(A))))
-```
+## Brute Force Search
+The brute force search method is a simple approach that guarantees a minimal solution but becomes computationally expensive as the board size increases due to the exponential increase in the search space.
 
-This uses a special overload of neighbors which counts all squares out of 
-bounds as 1's instead of zeros. Otherwise checkers on the edge would "cover" 
-squares which are outside of the board.
-
-## By brute force search
-The brute force search is simple and guareteed to give a minimal solution, but
-performs horribly as n gets large due to the size of the search space 
-increasing factorially. 
+The `brute_force` function starts with the smallest possible number of checkers `m` and increments it only when all boards have been exhausted. This optimization allows the function to find the first covered board it encounters, which must be a minimal covering board. The function returns this solution immediately, avoiding the need to search through the entire space.
 
 ```julia
 using Combinatorics
+
 function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
-    board = zeros(Bool, n, n)  # pre-allocate a board
+    board = zeros(Bool, n, n)  # Pre-allocate a board
     for m in M
-        # make an iterator over every combination of indices length m. These is where we'll put the 1s
-        combinations = Combinatorics.Combinations(n * n, m)
-        for combination in combinations  # most of the allocations happen here
-            board .= 0  # Start by clearing the old board, this doesn't allocate
-            board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices.
-            if covered(board)  # check if the board is covered. This doesn't allocate somehow
-                return (board, m)  # if we find any solution, return early 
+        combinations = Combinatorics.Combinations(n * n, m)  # Iterator over every combination of indices of length m
+        for combination in combinations
+            board .= 0  # Clear the board
+            board[combination] .= 1  # Place a checker on every part of the board specified by the combination of indices
+            if covered(board)  # Check if the board is covered
+                return (board, m)  # Return the solution if found
             end
         end
     end
-    return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
+    return (Bool[;;], 0)  # Return an empty board if no solution is found
 end
 ```
-This function starts at the smallest possible `m` and only increments `m` when
-all boards have been exhausted. This means that the first covered board that
-this function finds *must* be a minimal covering board, and therefore the 
-function returns it immediatly. This is helpful because it doesn't require 
-searching through the entire search space.
 
-One issue with this function is that, due to how uses the same memory for every
-board, it is not clear how to parallelize it.
+## Stochastic Search
+The stochastic search method improves upon the brute force search by iteratively moving a non-covered board closer to a covered board with the same number of checkers. It achieves this by finding the square with a checker that covers the fewest other squares and placing its checker on the square with the most uncovered squares around it.
 
-## By Stochastic search. 
-
-The way that the brute force search looks for covered boards is far from optimal, checking huge swaths
-of uncovered boards before reaching any covered ones. Instead, why find a way to take a non-covered board
-and move it *closer* to a covered board with the same number of checkers. One way to do this is to find the square
-with a checker on it which coveres the fewest other squares, put it's checkeron the square with the most un-covered 
-squares (called "holes") around it.
+The `update!` function moves a checker from a covering square to a hole, reducing the number of holes on the board.
 
 ```julia
 function update!(A)
@@ -109,6 +74,10 @@ function update!(A)
 end
 ```
 
+Note that `find_min_covering` only needs to look at the squares with checkers on them.
+
+This update algorithm can be run until the number of holes is 0.
+
 ```julia
 function find_min_covering(A)
     I = filter(I -> A[I], CartesianIndices(A)) |> collect
@@ -117,34 +86,11 @@ function find_min_covering(A)
 end
 ```
 
-Note that `find_min_covering` only needs to look at the squares with checkers on them.
-
-This update algorithem can be run until the number of holes is 0.
-
-```julia
-A = zeros(n,n)
-A[1:m] .= 1
-
-prev_holes = holes(A)
-update!(A)
-next_holes = holes(A)
-while next_holes > 0
-    prev_holes = next_holes
-    update!(A)
-    next_holes = holes(A)
-end
-```
-
-However `update!` won't always reduce the number of holes. Sometimes it finds a 
-local minimum where it oscilates between multiple boards with a non-zero 
-number of holes. In these case, the board can be shuffled to give the 
-algorithem a new initial condition, and the process can be restarted.
-
-There is no guarentee that a covered n by n board with m checkers exists, 
-so the number of attempts is constrained.
+The `stochastic_search` function applies the `update!` function iteratively until the number of holes is reduced to zero. However, it may encounter local minima where the algorithm oscillates between multiple boards with a non-zero number of holes. In such cases, the board can be shuffled to give the algorithm a new initial condition, and the process can be restarted.
 
 ```julia
 using Random
+
 function stochastic_search(
     n::Int,
     m::Int;
@@ -153,7 +99,7 @@ function stochastic_search(
     (update!)=update!
 )
     A = copy(init)
-    for n in 1:attempts
+    for _ in 1:attempts
         prev_holes = holes(A)
         update!(A)
         next_holes = holes(A)
@@ -162,13 +108,78 @@ function stochastic_search(
             update!(A)
             next_holes = holes(A)
         end
-        holes(A) == 0 && return A
+        if holes(A) == 0
+            return A
+        end
         shuffle!(A)
     end
     return Bool[;;]
 end
 ```
 
-Note that this function can be used to find an upper bound on `m`, in fact 
-the higher `m` is the more likely it is to stumble on a solution. However it cannot 
-find a lower bound to `m` because it does not try all of the boards exhaustivly.
+Note that `stochastic_search` can be used to find an upper bound on `m`, as higher values of `m` increase the likelihood of finding a solution. However, it cannot find a lower bound for `m` because it does not try all the boards exhaustively.
+
+## Using CUDA
+To accelerate the brute force search method, this project incorporates CUDA, a parallel computing platform and API model that enables programming GPUs. By utilizing GPU parallelism, the computation time can be significantly reduced for large board sizes.
+
+To use CUDA in the brute force search method, the `brute_force` function can be modified to use CUDA arrays (`CuArray`) provided by the CUDA.jl package. Here's an example of how to modify the `brute_force` function to use CUDA:
+
+```julia
+using CUDA, Combinatorics
+
+function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
+    board = CUDA.zeros(Bool, n, n)  # Use CuArray to allocate a GPU array
+    for m in M
+        combinations = Combinatorics.Combinations(n * n, m)  # Iterator over every combination of indices of length m
+        for combination in combinations
+            CUDA.@sync CUDA.@cuda threads=256 brute_force_kernel(board, combination)  # Launch the kernel on the GPU
+            if CUDA.@sync covered(board)  # Check if the board is covered
+                return (board, m)  # Return the solution if found
+            end
+        end
+    end
+    return (Bool
+
+[;;], 0)  # Return an empty board if no solution is found
+end
+
+@cuda threads=256 function brute_force_kernel(board, combination)
+    # Kernel code to place checkers on the board based on the combination of indices
+    # ...
+end
+```
+
+To utilize CUDA in the brute force search method, make sure to install the CUDA.jl package and have compatible CUDA-enabled hardware and drivers.
+
+## Building and Running the Project
+To build and run this Julia project, follow these steps:
+
+1. Install Julia: Download and install Julia from the [official Julia website](https://julialang.org/downloads/). Follow the installation instructions specific to your operating system.
+
+2. Set up CUDA (if using CUDA): If you plan to use CUDA for GPU acceleration, make sure to install CUDA drivers and set up the necessary environment variables. Refer to the CUDA.jl documentation for detailed instructions.
+
+3. Set up the project: Create a new directory for your project and navigate to it using a terminal or command prompt. Initialize a new Julia project in this directory by running the following command:
+   ```
+   $ julia --project=.
+   ```
+
+4. Install project dependencies: To install the required packages for this project, run the following command in the Julia REPL (started from the project directory):
+   ```julia
+   using Pkg
+   Pkg.activate(".")
+   Pkg.add("Combinatorics")
+   Pkg.add("CUDA")  # If using CUDA
+   ```
+
+5. Create the source files: Create a new file called `checkers.jl` and copy the code from the relevant sections above. Additionally, create a file called `tests.jl` and copy the provided test code into it.
+
+6. Implement the modifications: Modify the `brute_force` function to use CUDA (if desired) and include the necessary CUDA kernel code. Add comments to the code and make any other desired changes.
+
+7. Run the tests: To execute the tests, run the following command in the Julia REPL:
+   ```julia
+   include("tests.jl")
+   ```
+
+8. Build and run the project: Depending on your requirements, you can create a Julia script or application to utilize the `brute_force` or `stochastic_search` functions. Use the desired function and its arguments to solve the problem for specific board sizes.
+
+By following these steps, you can build and run the Checkers.jl project, test the functionality of the solution methods, and explore CUDA acceleration if desired.

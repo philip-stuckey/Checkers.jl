@@ -1,49 +1,94 @@
 module BruteForce
+
 using Combinatorics
-using ...CheckersCore: covered
+using CUDA
+include("core.jl")
+using .CheckersCore: covered
+using ProgressMeter
+import Dates
 
 export brute_force, num_solutions
 
 """
-    brute_foece(n, M=ceil(Int, n * n / 5):(n*n))
+brute_force(n, M=ceil(Int, n * n / 5):(n*n))
 
-	Finds the minimum number of "1"s required to cover a square matrix of side
-length n. It does this by first looking for any covered boards with 1 "1" on 
-them, then any board with 2 "1"s, etc... If at any point it finds one, it 
-returns immediatly, because it always exhausts boards with fewer "1"s first,
-therefore the first covered board it finds must be a minimal one.
+Runs the brute force algorithm to solve the checkers problem.
+
+Args:
+- `n`: The size of the checkers board (n x n).
+- `M`: The range of task sizes to consider (default: 1/5 to n^2).
+
+Returns:
+- A tuple `(solution, m)` where `solution` is a boolean array representing the solved checkers board
+  and `m` is the task size that resulted in the solution.
 """
 function brute_force(n, M=ceil(Int, n * n / 5):(n*n))
-    board = zeros(Bool, n, n)  # pre-allocate a board
-    for m in M
-        # make an iterator over every combination of indices length m. These is where we'll put the 1s
-        combinations = Combinatorics.Combinations(n * n, m)
-        #@info "$(now())" m  log10(length(combinations))
-        for combination in combinations  # most of the allocations happen here
-            board .= 0  # Start by clearing the old board, this doesn't allocate
-            board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices. This allocates a little bit
-            if covered(board)  # check if the board is covered. This doesn't allocate somehow
-                return (board, m)  # if we find any solution, return early 
+    h_solution = Vector{Tuple{Array{Bool, 2}, Int}}(undef, 1)  # host array to store solution
+    total_combinations = length(collect(Combinatorics.Combinations(n * n, maximum(M))))
+    p = Progress(total_combinations, 1, "Progress: ", " Combinations: ")
+
+    for (i, m) in enumerate(M)
+        combinations = collect(Combinatorics.Combinations(n * n, m))  # Convert Combinations object to array
+        num_tried = 0
+        start_time = now()
+        for combination in combinations
+            CUDA.@sync begin
+                d_board = CUDA.zeros(Bool, n, n)  # allocate a GPU array
+                d_board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices
             end
+            num_tried += 1
+            if CUDA.@sync covered(d_board)
+                h_solution[1] = (CUDA.to_host(copy(d_board)), m)  # if we find any solution, store it in the host array
+                elapsed_time = Dates.now() - start_time
+                iterations_per_second = num_tried / Dates.value(Dates.Millisecond(elapsed_time))
+                println("Solution found!")
+                println("Combination: ", combination)
+                println("Combinations tried: ", num_tried, "/", total_combinations)
+                println("Iterations per second: ", iterations_per_second)
+                return h_solution[1]  # exit the function early
+            end
+            next!(p)  # update the progress bar
         end
+        done!(p)  # mark the progress bar as done
     end
-    return (Bool[;;], 0)  # if the function gets this far, presumably no solutions exist
+
+    # If no solution is found, return an empty boolean array
+    return (Bool[;;], 0)
 end
 
-function num_solutions(n, m)
-    board = zeros(Bool, n, n)  # pre-allocate a board
-    result = 0
-    # make an iterator over every combination of indices length m. These is where we'll put the 1s
-    combinations = Combinatorics.Combinations(n * n, m)
-    #@info "$(now())" m  log10(length(combinations))
-    for combination in combinations  # most of the allocations happen here
-        board .= 0  # Start by clearing the old board, this doesn't allocate
-        board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices. This allocates a little bit
-        if covered(board)  # check if the board is covered. This doesn't allocate somehow
-            result += 1
+"""
+num_solutions(n, M=ceil(Int, n * n / 5):(n*n))
+
+Counts the number of solutions for the checkers problem.
+
+Args:
+- `n`: The size of the checkers board (n x n).
+- `M`: The range of task sizes to consider (default: 1/5 to n^2).
+
+Returns:
+- The number of solutions found.
+"""
+function num_solutions(n, M=ceil(Int, n * n / 5):(n*n))
+    num_solutions = 0
+    total_combinations = length(collect(Combinatorics.Combinations(n * n, maximum(M))))
+    p = Progress(total_combinations, 1, "Progress: ", " Combinations: ")
+
+    for (i, m) in enumerate(M)
+        combinations = collect(Combinatorics.Combinations(n * n, m))  # Convert Combinations object to array
+        for combination in combinations
+            CUDA.@sync begin
+                d_board = CUDA.zeros(Bool, n, n)  # allocate a GPU array
+                d_board[combination] .= 1  # put a 1 on every part of the board specified by that combination of indices
+            end
+            if CUDA.@sync covered(d_board)
+                num_solutions += 1
+            end
+            next!(p)  # update the progress bar
         end
+        done!(p)  # mark the progress bar as done
     end
-    return result
+
+    return num_solutions
 end
 
 end
